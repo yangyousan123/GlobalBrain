@@ -1,0 +1,8 @@
+akshare
+pandas
+numpy
+requests
+python-dotenv
+APScheduler
+pyyaml
+yfinance
