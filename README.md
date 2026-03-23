@@ -6,7 +6,7 @@
 
 ## 系统架构图
 
-![](./images/architecture.png)
+![](images/architecture.png)
 
 - 主入口由 `main.py` 驱动：支持立即执行和定时任务两种模式。
 - 行情获取以 `AkShare` 为主，失败后按 `Stooq -> yfinance -> 本地缓存` 回退，并在末尾对失败股票做 `yfinance` 批量补齐。

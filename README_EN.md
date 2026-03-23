@@ -6,7 +6,7 @@ A Python + DeepSeek large language model based system that automatically analyze
 
 ## System Architecture Diagram
 
-![](./images/architecture_en.png)
+![](images/architecture_en.png)
 
 - The main entry point is driven by `main.py`, supporting both immediate execution and scheduled task modes.
 - Market data retrieval primarily uses `AkShare`, with fallbacks to `Stooq -> yfinance -> local cache` upon failure. Failed stocks are batch-retrieved using `yfinance` at the end.
