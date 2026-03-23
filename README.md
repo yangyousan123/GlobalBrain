@@ -73,7 +73,7 @@ python main.py --schedule
 
 - Windows 任务计划程序：开机启动 `python main.py --schedule`
 - 或 Linux `systemd` / `supervisor` 守护进程
-- 建议在交易日收盘后时间触发（如 `18:30`）
+- 建议在交易日收盘后时间触发（如 `22:00`）
 
 ## 免责声明
 

@@ -68,6 +68,9 @@ def render_dashboard_html(
         {table_html}
       </tbody>
     </table>
+    <div class="card">
+      <strong>免责声明：</strong> 本项目仅限学习与研究用途，不构成任何投资建议。股市投资存在风险，入市请务必谨慎。作者对因使用本项目所引发的任何损失不承担责任。
+    </div>
   </div>
 </body>
 </html>
