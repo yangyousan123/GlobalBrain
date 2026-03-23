@@ -77,4 +77,4 @@ python main.py --schedule
 
 ## Disclaimer
 
-The output of this system is for research and decision support purposes only and does not constitute investment advice. Please exercise independent judgment based on your risk tolerance.
+This project is intended for learning and research purposes only and does not constitute any form of investment advice. Stock market investments carry risks, so please exercise caution when entering the market. The author assumes no responsibility for any losses incurred as a result of using this project.
