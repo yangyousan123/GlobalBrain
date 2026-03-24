@@ -2,6 +2,8 @@
 
 # GlobalBrain
 
+![](images/logo_GlobalBrain.png)
+
 Intelligent Stock Analysis System (Shanghai A-Shares / Hong Kong Stocks / US Stocks).
 
 Automatically fetches market data for watchlist stocks, generates strategy suggestions, aggregates news summaries, outputs an HTML decision dashboard, and sends notifications daily.

@@ -1,5 +1,7 @@
 # GlobalBrain
 
+![](images/logo_GlobalBrain.png)
+
 股票智能分析系统（沪A / 港股 / 美股）。
 
 每天自动拉取自选股行情、生成策略建议、汇总新闻摘要、输出 HTML 决策仪表盘并推送通知。
