@@ -38,7 +38,14 @@ def resolve_watchlist_path(path_str: str) -> str:
 
 
 def _enrich_news_from_tavily(settings: Settings, stock_metrics: list[dict[str, Any]]) -> None:
-    if not settings.tavily_enabled or not settings.tavily_api_key:
+    news_keys = {
+        "tavily": settings.tavily_api_key,
+        "serpapi": settings.serpapi_api_key,
+        "bocha": settings.bocha_api_key,
+        "brave": settings.brave_api_key,
+        "minimax": settings.minimax_api_key,
+    }
+    if not any(news_keys.values()):
         return
     key = settings.tavily_api_key
     delay = max(0.0, settings.tavily_request_delay_seconds)
@@ -63,10 +70,12 @@ def _enrich_news_from_tavily(settings: Settings, stock_metrics: list[dict[str, A
             continue
         market = str(m.get("market") or "cn_sh")
         digest = fetch_stock_news_digest(
-            key,
+            key or "",
             str(code),
             m.get("name") if isinstance(m.get("name"), str) else None,
             market=market,
+            provider_order=settings.news_provider_order,
+            provider_api_keys=news_keys,
             max_results=settings.tavily_max_results,
             search_depth=settings.tavily_search_depth,
             topic=settings.tavily_topic,

@@ -58,6 +58,11 @@ class Settings:
     tavily_request_delay_seconds: float
     news_digest_max_chars: int
     tavily_translate_answer_to_zh: bool
+    news_provider_order: tuple[str, ...]
+    serpapi_api_key: str | None
+    bocha_api_key: str | None
+    brave_api_key: str | None
+    minimax_api_key: str | None
     accuracy_windows: tuple[int, ...]
 
 
@@ -166,6 +171,19 @@ def _parse_accuracy_windows() -> tuple[int, ...]:
     return tuple(sorted(vals))
 
 
+def _parse_news_provider_order() -> tuple[str, ...]:
+    allowed = ("tavily", "serpapi", "bocha", "brave", "minimax")
+    raw = os.getenv("NEWS_PROVIDER_ORDER", "tavily,serpapi,brave,bocha,minimax").strip().lower()
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    out: list[str] = []
+    for p in parts:
+        if p in allowed and p not in out:
+            out.append(p)
+    if not out:
+        return allowed
+    return tuple(out)
+
+
 def _validate_notify(s: Settings) -> None:
     ok = False
     for ch in s.notify_channels:
@@ -261,6 +279,11 @@ def load_settings() -> Settings:
         tavily_request_delay_seconds=float(os.getenv("TAVILY_REQUEST_DELAY_SECONDS", "1.0")),
         news_digest_max_chars=int(os.getenv("NEWS_DIGEST_MAX_CHARS", "2000")),
         tavily_translate_answer_to_zh=_env_bool("TAVILY_TRANSLATE_ANSWER_TO_ZH", True),
+        news_provider_order=_parse_news_provider_order(),
+        serpapi_api_key=_optional("SERPAPI_API_KEY"),
+        bocha_api_key=_optional("BOCHA_API_KEY"),
+        brave_api_key=_optional("BRAVE_API_KEY"),
+        minimax_api_key=_optional("MINIMAX_API_KEY"),
         accuracy_windows=_parse_accuracy_windows(),
     )
     _validate_notify(s)
