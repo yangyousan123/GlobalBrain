@@ -15,7 +15,7 @@ import requests
 
 SH_A_PREFIXES = ("600", "601", "603", "605", "688", "689")
 
-CACHE_DIR = Path(__file__).resolve().parent / "cache"
+CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 
 
 def validate_sh_a_stock(code: str) -> bool:
@@ -99,6 +99,7 @@ def _fetch_stock_metrics_yfinance(
         return None
 
     df["ma5"] = df["close"].rolling(5).mean()
+    df["ma10"] = df["close"].rolling(10).mean()
     df["ma20"] = df["close"].rolling(20).mean()
     df["rsi14"] = _calc_rsi(df["close"], 14)
     df["vol_ratio5"] = df["volume"] / df["volume"].rolling(5).mean()
@@ -107,17 +108,18 @@ def _fetch_stock_metrics_yfinance(
     prev_close = float(df["close"].iloc[-2]) if len(df) > 1 else float(last["close"])
     change_pct = (float(last["close"]) - prev_close) / prev_close * 100 if prev_close else 0.0
 
-    return {
-        "code": code,
-        "date": df.index[-1].strftime("%Y-%m-%d"),
-        "close": round(float(last["close"]), 2),
-        "change_pct": round(change_pct, 2),
-        "ma5": round(float(last["ma5"]), 2) if pd.notna(last["ma5"]) else None,
-        "ma20": round(float(last["ma20"]), 2) if pd.notna(last["ma20"]) else None,
-        "rsi14": round(float(last["rsi14"]), 2) if pd.notna(last["rsi14"]) else None,
-        "vol_ratio5": round(float(last["vol_ratio5"]), 2) if pd.notna(last["vol_ratio5"]) else None,
-        "prev_close": round(prev_close, 2),
-    }
+    return _finalize_ohlc_metrics(
+        code=code,
+        date_str=df.index[-1].strftime("%Y-%m-%d"),
+        close=float(last["close"]),
+        change_pct=change_pct,
+        prev_close=prev_close,
+        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
+        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
+        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
+        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
+        vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
+    )
 
 
 def _fetch_stock_metrics_stooq(
@@ -172,6 +174,7 @@ def _fetch_stock_metrics_stooq(
         return None
 
     csv_df["ma5"] = csv_df["close"].rolling(5).mean()
+    csv_df["ma10"] = csv_df["close"].rolling(10).mean()
     csv_df["ma20"] = csv_df["close"].rolling(20).mean()
     csv_df["rsi14"] = _calc_rsi(csv_df["close"], 14)
     csv_df["vol_ratio5"] = csv_df["volume"] / csv_df["volume"].rolling(5).mean()
@@ -180,17 +183,18 @@ def _fetch_stock_metrics_stooq(
     prev_close = float(csv_df["close"].iloc[-2]) if len(csv_df) > 1 else float(last["close"])
     change_pct = (float(last["close"]) - prev_close) / prev_close * 100 if prev_close else 0.0
 
-    return {
-        "code": code,
-        "date": last["Date"].strftime("%Y-%m-%d"),
-        "close": round(float(last["close"]), 2),
-        "change_pct": round(change_pct, 2),
-        "ma5": round(float(last["ma5"]), 2) if pd.notna(last["ma5"]) else None,
-        "ma20": round(float(last["ma20"]), 2) if pd.notna(last["ma20"]) else None,
-        "rsi14": round(float(last["rsi14"]), 2) if pd.notna(last["rsi14"]) else None,
-        "vol_ratio5": round(float(last["vol_ratio5"]), 2) if pd.notna(last["vol_ratio5"]) else None,
-        "prev_close": round(prev_close, 2),
-    }
+    return _finalize_ohlc_metrics(
+        code=code,
+        date_str=last["Date"].strftime("%Y-%m-%d"),
+        close=float(last["close"]),
+        change_pct=change_pct,
+        prev_close=prev_close,
+        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
+        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
+        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
+        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
+        vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
+    )
 
 
 def _fetch_stock_metrics_yfinance_batch(
@@ -275,6 +279,7 @@ def _fetch_stock_metrics_yfinance_batch(
             continue
 
         tmp["ma5"] = tmp["close"].rolling(5).mean()
+        tmp["ma10"] = tmp["close"].rolling(10).mean()
         tmp["ma20"] = tmp["close"].rolling(20).mean()
         tmp["rsi14"] = _calc_rsi(tmp["close"], 14)
         tmp["vol_ratio5"] = tmp["volume"] / tmp["volume"].rolling(5).mean()
@@ -283,17 +288,18 @@ def _fetch_stock_metrics_yfinance_batch(
         prev_close = float(tmp["close"].iloc[-2]) if len(tmp) > 1 else float(last["close"])
         change_pct = (float(last["close"]) - prev_close) / prev_close * 100 if prev_close else 0.0
 
-        results[code] = {
-            "code": code,
-            "date": tmp.index[-1].strftime("%Y-%m-%d"),
-            "close": round(float(last["close"]), 2),
-            "change_pct": round(change_pct, 2),
-            "ma5": round(float(last["ma5"]), 2) if pd.notna(last["ma5"]) else None,
-            "ma20": round(float(last["ma20"]), 2) if pd.notna(last["ma20"]) else None,
-            "rsi14": round(float(last["rsi14"]), 2) if pd.notna(last["rsi14"]) else None,
-            "vol_ratio5": round(float(last["vol_ratio5"]), 2) if pd.notna(last["vol_ratio5"]) else None,
-            "prev_close": round(prev_close, 2),
-        }
+        results[code] = _finalize_ohlc_metrics(
+            code=code,
+            date_str=tmp.index[-1].strftime("%Y-%m-%d"),
+            close=float(last["close"]),
+            change_pct=change_pct,
+            prev_close=prev_close,
+            ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
+            ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
+            ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
+            rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
+            vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
+        )
 
     return results
 
@@ -304,6 +310,52 @@ def fetch_stock_metrics_yfinance_batch(
 ) -> list[dict[str, Any]]:
     results_map = _fetch_stock_metrics_yfinance_batch(codes=codes, lookback_days=lookback_days)
     return list(results_map.values())
+
+
+def _finalize_ohlc_metrics(
+    *,
+    code: str,
+    date_str: str,
+    close: float,
+    change_pct: float,
+    prev_close: float,
+    ma5: float | None,
+    ma10: float | None,
+    ma20: float | None,
+    rsi14: float | None,
+    vol_ratio5: float | None,
+) -> dict[str, Any]:
+    def r2(x: float | None) -> float | None:
+        if x is None or (isinstance(x, float) and pd.isna(x)):
+            return None
+        return round(float(x), 2)
+
+    ma5v, ma10v, ma20v = r2(ma5), r2(ma10), r2(ma20)
+    bias_ma20_pct = None
+    if ma20v is not None and ma20v != 0:
+        bias_ma20_pct = round((close - ma20v) / ma20v * 100, 2)
+    ma_trend = None
+    if ma5v is not None and ma10v is not None and ma20v is not None:
+        if ma5v > ma10v > ma20v:
+            ma_trend = "bull"
+        elif ma5v < ma10v < ma20v:
+            ma_trend = "bear"
+        else:
+            ma_trend = "mixed"
+    return {
+        "code": code,
+        "date": date_str,
+        "close": round(close, 2),
+        "change_pct": round(change_pct, 2),
+        "ma5": ma5v,
+        "ma10": ma10v,
+        "ma20": ma20v,
+        "rsi14": r2(rsi14),
+        "vol_ratio5": r2(vol_ratio5),
+        "prev_close": round(prev_close, 2),
+        "bias_ma20_pct": bias_ma20_pct,
+        "ma_trend": ma_trend,
+    }
 
 
 def _calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
@@ -392,6 +444,7 @@ def fetch_stock_metrics(
     df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
 
     df["ma5"] = df["收盘"].rolling(5).mean()
+    df["ma10"] = df["收盘"].rolling(10).mean()
     df["ma20"] = df["收盘"].rolling(20).mean()
     df["rsi14"] = _calc_rsi(df["收盘"], 14)
     df["vol_ratio5"] = df["成交量"] / df["成交量"].rolling(5).mean()
@@ -399,17 +452,18 @@ def fetch_stock_metrics(
     last = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else last
 
-    metrics = {
-        "code": code,
-        "date": str(last["日期"])[:10],
-        "close": round(float(last["收盘"]), 2),
-        "change_pct": round(float(last["涨跌幅"]), 2),
-        "ma5": round(float(last["ma5"]), 2) if pd.notna(last["ma5"]) else None,
-        "ma20": round(float(last["ma20"]), 2) if pd.notna(last["ma20"]) else None,
-        "rsi14": round(float(last["rsi14"]), 2) if pd.notna(last["rsi14"]) else None,
-        "vol_ratio5": round(float(last["vol_ratio5"]), 2) if pd.notna(last["vol_ratio5"]) else None,
-        "prev_close": round(float(prev["收盘"]), 2),
-    }
+    metrics = _finalize_ohlc_metrics(
+        code=code,
+        date_str=str(last["日期"])[:10],
+        close=float(last["收盘"]),
+        change_pct=float(last["涨跌幅"]),
+        prev_close=float(prev["收盘"]),
+        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
+        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
+        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
+        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
+        vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
+    )
 
     if use_cache:
         _save_cached_stock_metrics(code, metrics)

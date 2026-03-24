@@ -1,1 +1,1 @@
-{"saved_at": "2026-03-23T22:11:45", "metrics": {"code": "688981", "date": "2026-03-23", "close": 98.04, "change_pct": -4.05, "ma5": 103.76, "ma20": 108.23, "rsi14": 25.91, "vol_ratio5": 1.39, "prev_close": 102.18}}
+{"saved_at": "2026-03-24T08:48:52", "metrics": {"code": "688981", "date": "2026-03-23", "close": 98.04, "change_pct": -4.05, "ma5": 103.76, "ma10": 105.48, "ma20": 108.23, "rsi14": 25.91, "vol_ratio5": 1.39, "prev_close": 102.18, "bias_ma20_pct": -9.42, "ma_trend": "bear"}}

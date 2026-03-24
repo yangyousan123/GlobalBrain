@@ -4,10 +4,10 @@
 flowchart LR
     %% ===== 分层子图 =====
     subgraph U["用户与触发层"]
-        CLI["main.py<br/>CLI 参数 (--once / --schedule)"]
+        CLI["src/main.py<br/>CLI 参数 (--once / --schedule)"]
         SCH["APScheduler<br/>每日定时触发"]
         WL["watchlist.yaml<br/>自选股代码/名称"]
-        ENV[".env / config.py<br/>运行配置加载"]
+        ENV[".env / src/config.py<br/>运行配置加载"]
     end
 
     subgraph O["编排与业务层"]
@@ -89,7 +89,7 @@ flowchart LR
 
 ## 说明
 
-- 主入口由 `main.py` 驱动：支持立即执行和定时任务两种模式。
+- 主入口由 `src/main.py` 驱动：支持立即执行和定时任务两种模式。
 - 行情获取以 `AkShare` 为主，失败后按 `Stooq -> yfinance -> 本地缓存` 回退，并在末尾对失败股票做 `yfinance` 批量补齐。
 - 分析优先走 `DeepSeek`，异常时自动切换 `fallback_analysis()` 规则引擎，保证可用性。
 - 输出统一汇总到 HTML 仪表盘，再通过 SMTP 推送至收件人邮箱。

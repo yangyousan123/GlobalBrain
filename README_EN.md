@@ -8,7 +8,7 @@ A Python + DeepSeek large language model based system that automatically analyze
 
 ![](images/architecture_en.png)
 
-- The main entry point is driven by `main.py`, supporting both immediate execution and scheduled task modes.
+- The main entry point is driven by `src/main.py`, supporting both immediate execution and scheduled task modes.
 - Market data retrieval primarily uses `AkShare`, with fallbacks to `Stooq -> yfinance -> local cache` upon failure. Failed stocks are batch-retrieved using `yfinance` at the end.
 - Analysis prioritizes `DeepSeek`, automatically switching to the `fallback_analysis()` rule engine in case of exceptions to ensure availability.
 - Outputs are consolidated into an HTML dashboard and sent to recipients via SMTP.
@@ -60,18 +60,18 @@ watchlist:
 Execute once immediately:
 
 ```bash
-python main.py --once
+python -m src --once
 ```
 
 Run on a daily schedule (default):
 
 ```bash
-python main.py --schedule
+python -m src --schedule
 ```
 
 ## Recommended Deployment
 
-- Windows Task Scheduler: start `python main.py --schedule` at boot
+- Windows Task Scheduler: start `python -m src --schedule` at boot
 - Or use Linux `systemd` / `supervisor` as a daemon
 - It is recommended to trigger execution after market close on trading days (e.g., `18:30`)
 
