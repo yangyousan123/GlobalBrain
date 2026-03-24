@@ -9,8 +9,17 @@ from .openai_compat import extract_message_content, post_chat_completions
 class OpenAICompatClient:
     """OpenAI 兼容 /chat/completions，支持多模型按顺序回退。"""
 
-    def __init__(self, api_key: str, base_url: str, models: list[str]) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        models: list[str],
+        api_keys: list[str] | None = None,
+        provider_api_keys: dict[str, list[str]] | None = None,
+    ) -> None:
         self.api_key = api_key
+        self.api_keys = api_keys or [api_key]
+        self.provider_api_keys = provider_api_keys or {}
         self.base_url = base_url.rstrip("/")
         self.models = models
 
@@ -47,6 +56,8 @@ class OpenAICompatClient:
         }
         data = post_chat_completions(
             api_key=self.api_key,
+            api_keys=self.api_keys,
+            provider_api_keys=self.provider_api_keys,
             base_url=self.base_url,
             models=self.models,
             payload=payload,

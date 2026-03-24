@@ -51,6 +51,8 @@ def _enrich_news_from_tavily(settings: Settings, stock_metrics: list[dict[str, A
                 api_key=settings.llm_api_key,
                 base_url=settings.llm_base_url,
                 models=list(settings.llm_models),
+                api_keys=list(settings.llm_api_keys),
+                provider_api_keys={k: list(v) for k, v in settings.llm_provider_api_keys.items()},
                 include_answer=settings.tavily_include_answer,
             )
 
@@ -170,6 +172,8 @@ def run_analysis_pipeline(
     else:
         llm_client = OpenAICompatClient(
             api_key=settings.llm_api_key,
+            api_keys=list(settings.llm_api_keys),
+            provider_api_keys={k: list(v) for k, v in settings.llm_provider_api_keys.items()},
             base_url=settings.llm_base_url,
             models=list(settings.llm_models),
         )

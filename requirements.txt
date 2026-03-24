@@ -6,3 +6,10 @@ python-dotenv
 APScheduler
 pyyaml
 yfinance
+litellm
+httpx
+aiohttp
+openai
+tiktoken
+tokenizers
+jinja2

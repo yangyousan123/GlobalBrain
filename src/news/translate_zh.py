@@ -31,6 +31,8 @@ def translate_to_zh_openai_compatible(
     api_key: str,
     base_url: str,
     models: list[str],
+    api_keys: list[str] | None = None,
+    provider_api_keys: dict[str, list[str]] | None = None,
     timeout: float = 60.0,
     max_input_chars: int = 8000,
 ) -> str:
@@ -65,6 +67,8 @@ def translate_to_zh_openai_compatible(
     try:
         data = post_chat_completions(
             api_key=api_key,
+            api_keys=api_keys,
+            provider_api_keys=provider_api_keys,
             base_url=base_url,
             models=models,
             payload=payload,
@@ -97,6 +101,8 @@ def translate_tavily_payload_to_zh(
     api_key: str,
     base_url: str,
     models: list[str],
+    api_keys: list[str] | None = None,
+    provider_api_keys: dict[str, list[str]] | None = None,
     include_answer: bool,
     timeout: float = 90.0,
 ) -> dict[str, Any]:
@@ -168,6 +174,8 @@ def translate_tavily_payload_to_zh(
     try:
         data = post_chat_completions(
             api_key=api_key,
+            api_keys=api_keys,
+            provider_api_keys=provider_api_keys,
             base_url=base_url,
             models=models,
             payload=payload,

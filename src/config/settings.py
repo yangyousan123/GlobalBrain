@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Mapping
 
 from dotenv import load_dotenv
 
@@ -23,6 +24,8 @@ def _parse_notify_channels() -> tuple[str, ...]:
 @dataclass
 class Settings:
     llm_api_key: str
+    llm_api_keys: tuple[str, ...]
+    llm_provider_api_keys: Mapping[str, tuple[str, ...]]
     llm_base_url: str
     llm_models: tuple[str, ...]
     notify_channels: tuple[str, ...]
@@ -90,6 +93,59 @@ def _resolve_llm_models() -> tuple[str, ...]:
         if m and m not in out:
             out.append(m)
     return tuple(out)
+
+
+def _resolve_llm_api_keys() -> tuple[str, ...]:
+    # 优先读取统一多 Key 变量；兼容 OPENAI_API_KEYS / DEEPSEEK_API_KEYS
+    raw_multi = (
+        os.getenv("LLM_API_KEYS", "").strip()
+        or os.getenv("OPENAI_API_KEYS", "").strip()
+        or os.getenv("DEEPSEEK_API_KEYS", "").strip()
+    )
+    keys: list[str] = []
+    if raw_multi:
+        for x in raw_multi.split(","):
+            k = x.strip()
+            if k and k not in keys:
+                keys.append(k)
+
+    if keys:
+        return tuple(keys)
+
+    # 单 Key 兼容路径
+    single = os.getenv("OPENAI_API_KEY", "").strip() or os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not single:
+        raise ValueError("缺少 LLM_API_KEYS 或 OPENAI_API_KEY / DEEPSEEK_API_KEY")
+    return (single,)
+
+
+def _parse_api_keys_var(name: str) -> tuple[str, ...]:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return ()
+    out: list[str] = []
+    for x in raw.split(","):
+        k = x.strip()
+        if k and k not in out:
+            out.append(k)
+    return tuple(out)
+
+
+def _resolve_provider_api_keys(default_keys: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+    # provider 前缀以 LiteLLM model 的 provider/model 为准
+    mapping: dict[str, tuple[str, ...]] = {
+        "anthropic": _parse_api_keys_var("ANTHROPIC_API_KEYS"),
+        "gemini": _parse_api_keys_var("GEMINI_API_KEYS"),
+        "qwen": _parse_api_keys_var("QWEN_API_KEYS"),
+        "deepseek": _parse_api_keys_var("DEEPSEEK_API_KEYS"),
+        "openai": _parse_api_keys_var("OPENAI_API_KEYS"),
+        "openai_like": _parse_api_keys_var("OPENAI_API_KEYS"),
+        "azure": _parse_api_keys_var("OPENAI_API_KEYS"),
+    }
+    # 空池回退到通用池，保证开箱可用
+    for provider, keys in list(mapping.items()):
+        mapping[provider] = keys or default_keys
+    return mapping
 
 
 def _parse_accuracy_windows() -> tuple[int, ...]:
@@ -160,11 +216,10 @@ def load_settings() -> Settings:
         mail_from = os.getenv("MAIL_FROM", "").strip()
         mail_to = [m.strip() for m in os.getenv("MAIL_TO", "").split(",") if m.strip()]
 
+    llm_keys = _resolve_llm_api_keys()
+    provider_keys = _resolve_provider_api_keys(llm_keys)
+    llm_key = llm_keys[0]
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    ds_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    llm_key = openai_key or ds_key
-    if not llm_key:
-        raise ValueError("缺少 OPENAI_API_KEY 或 DEEPSEEK_API_KEY（OpenAI 兼容接口）")
     if openai_key:
         llm_base = os.getenv("OPENAI_BASE_URL", "").strip() or "https://api.openai.com/v1"
     else:
@@ -172,6 +227,8 @@ def load_settings() -> Settings:
 
     s = Settings(
         llm_api_key=llm_key,
+        llm_api_keys=llm_keys,
+        llm_provider_api_keys=provider_keys,
         llm_base_url=llm_base,
         llm_models=_resolve_llm_models(),
         notify_channels=channels,
