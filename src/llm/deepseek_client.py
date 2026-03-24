@@ -4,9 +4,6 @@ import json
 from typing import Any
 
 from .openai_compat import extract_message_content, post_chat_completions
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 class OpenAICompatClient:
@@ -19,10 +16,11 @@ class OpenAICompatClient:
 
     def analyze(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         system_prompt = (
-            "你是A股量化研究员，输出严格 JSON（不要 Markdown）。"
-            "字段：market_view(字符串，大盘与风格一句话)；"
-            "stocks(数组)，每项含："
-            "code, action(买入/观察/减仓), confidence(0-100整数), "
+            "你是跨市场（沪A/港股/美股）量化研究员，输出严格 JSON（不要 Markdown）。"
+            "输入中每只股票含 market 字段：cn_sh 沪A、hk 港股、us 美股。"
+            "字段：market_view(字符串，跨市场风格与风险偏好一句话)；"
+            "stocks(数组)，每项须含："
+            "code, market（与输入一致：cn_sh|hk|us）, action(买入/观察/减仓), confidence(0-100整数), "
             "reason(<=100字), risk(<=100字), "
             "buy_zone(字符串：建议关注买入区间或价位), "
             "stop_loss(字符串：止损参考价或条件), "
@@ -36,7 +34,7 @@ class OpenAICompatClient:
             "若 bias_alert 为 true，须在 reason 或 checklist 中提示不追高或仓位纪律。"
         )
         user_prompt = (
-            "请分析以下沪A自选股数据（含技术指标、规则标注及 Tavily 新闻摘要 news_digest，可能为空）：\n"
+            "请分析以下自选股数据（含 market、技术指标、规则标注及 Tavily 新闻摘要 news_digest，可能为空）：\n"
             f"{json.dumps(items, ensure_ascii=False)}"
         )
         payload = {
@@ -125,6 +123,7 @@ def fallback_analysis(items: list[dict[str, Any]]) -> dict[str, Any]:
         stocks.append(
             {
                 "code": row["code"],
+                "market": row.get("market") or "cn_sh",
                 "action": action,
                 "confidence": confidence,
                 "reason": reason,

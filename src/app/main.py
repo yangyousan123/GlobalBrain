@@ -6,7 +6,7 @@ import logging
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from .config import load_settings
+from ..config import load_settings
 from .pipeline import run_analysis_pipeline
 
 logging.basicConfig(
@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="沪A股自选股智能分析系统")
+    parser = argparse.ArgumentParser(
+        description="自选股智能分析（沪A / 港股 / 美股）",
+    )
     parser.add_argument("--once", action="store_true", help="立即执行一次分析并推送")
     parser.add_argument("--schedule", action="store_true", help="进入每日定时模式")
     parser.add_argument(

@@ -4,6 +4,37 @@ import html
 from datetime import datetime
 from typing import Any
 
+from ..data.markets import MARKET_CN_SH, MARKET_HK, MARKET_US
+
+
+def _market_display(market: str | None) -> str:
+    m = market or MARKET_CN_SH
+    if m == MARKET_HK:
+        return "港股"
+    if m == MARKET_US:
+        return "美股"
+    return "沪A"
+
+
+def _metric_key(code: str, market: str | None) -> tuple[str, str]:
+    m = market or MARKET_CN_SH
+    return (str(code), m)
+
+
+def _lookup_metric(
+    stock_map: dict[tuple[str, str], dict[str, Any]],
+    code: str,
+    market: str | None,
+) -> dict[str, Any]:
+    key = _metric_key(str(code), market)
+    data = stock_map.get(key)
+    if data:
+        return data
+    for k, v in stock_map.items():
+        if k[0] == str(code):
+            return v
+    return {}
+
 
 def _fmt_checklist(rec: dict[str, Any]) -> str:
     cl = rec.get("checklist") or []
@@ -23,8 +54,9 @@ def _news_digest_section(stock_metrics: list[dict[str, Any]]) -> str:
         if not digest or not str(digest).strip():
             continue
         code = m.get("code", "")
+        mk = m.get("market") or MARKET_CN_SH
         name = m.get("name")
-        title = f"{name}({code})" if name else str(code)
+        title = f"{_market_display(str(mk))} {name}({code})" if name else f"{_market_display(str(mk))} {code}"
         body = html.escape(str(digest)[:4000])
         blocks.append(
             f'<div style="margin-bottom:10px;"><strong>{html.escape(str(title))}</strong>'
@@ -44,13 +76,19 @@ def render_dashboard_html(
     stock_metrics: list[dict[str, Any]],
     llm_result: dict[str, Any],
 ) -> str:
-    stock_map = {item["code"]: item for item in stock_metrics}
+    stock_map = {
+        _metric_key(str(item["code"]), item.get("market")): item for item in stock_metrics
+    }
 
     rows_html = []
     for rec in llm_result.get("stocks", []):
         code = rec.get("code", "")
-        data = stock_map.get(code, {})
+        mk = rec.get("market") or MARKET_CN_SH
+        data = _lookup_metric(stock_map, str(code), str(mk))
+        if data.get("market"):
+            mk = data.get("market") or mk
         name = data.get("name")
+        m_label = _market_display(str(mk))
         display_name = f"{name}({code})" if name else code
         bias_pct = data.get("bias_ma20_pct")
         bias_str = f"{bias_pct}%" if bias_pct is not None else "-"
@@ -62,6 +100,7 @@ def render_dashboard_html(
         levels = f"买:{buy_z} | 止:{sl} | 标:{tp}"
         rows_html.append(
             "<tr>"
+            f"<td>{m_label}</td>"
             f"<td>{display_name}</td>"
             f"<td>{data.get('close', '-')}</td>"
             f"<td>{data.get('change_pct', '-')}%</td>"
@@ -83,7 +122,7 @@ def render_dashboard_html(
         )
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    table_html = "\n".join(rows_html) if rows_html else "<tr><td colspan='17'>无数据</td></tr>"
+    table_html = "\n".join(rows_html) if rows_html else "<tr><td colspan='18'>无数据</td></tr>"
     news_html = _news_digest_section(stock_metrics)
 
     return f"""
@@ -102,7 +141,7 @@ def render_dashboard_html(
 </head>
 <body>
   <div class="container">
-    <h1>沪A股自选股 - 每日决策仪表盘</h1>
+    <h1>自选股 - 每日决策仪表盘</h1>
     <div class="card">
       <strong>大盘观点：</strong> {llm_result.get("market_view", "无")}
       <br/>
@@ -111,7 +150,7 @@ def render_dashboard_html(
     <table>
       <thead>
         <tr>
-          <th>名称</th><th>收盘</th><th>涨跌幅</th><th>MA5</th><th>MA10</th><th>MA20</th>
+          <th>市场</th><th>名称</th><th>收盘</th><th>涨跌幅</th><th>MA5</th><th>MA10</th><th>MA20</th>
           <th>乖离%(MA20)</th><th>RSI14</th><th>量比(5)</th><th>均线</th><th>乖离预警</th>
           <th>建议</th><th>置信度</th><th>买点/止损/目标</th><th>理由</th><th>风险</th><th>检查清单</th>
         </tr>

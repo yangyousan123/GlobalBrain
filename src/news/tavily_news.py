@@ -42,6 +42,7 @@ def fetch_stock_news_digest(
     code: str,
     name: str | None,
     *,
+    market: str = "cn_sh",
     max_results: int,
     search_depth: str,
     topic: str,
@@ -55,7 +56,12 @@ def fetch_stock_news_digest(
     调用 Tavily Search，返回面向 LLM/邮件的纯文本摘要；失败时返回空串并打日志。
     """
     label = f"{name.strip()} " if name and str(name).strip() else ""
-    query = f"{label}沪A股 {code} 上市公司 公告 业绩 新闻 最新"
+    if market == "hk":
+        query = f"{label}港股 {code} HKEX 财报 公告 新闻 最新"
+    elif market == "us":
+        query = f"{label}US stock {code} earnings news SEC latest"
+    else:
+        query = f"{label}沪A股 {code} 上市公司 公告 业绩 新闻 最新"
     payload: dict[str, Any] = {
         "api_key": api_key,
         "query": query,

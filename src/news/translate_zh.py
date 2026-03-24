@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Any
 
-from .openai_compat import extract_message_content, post_chat_completions
+from ..llm.openai_compat import extract_message_content, post_chat_completions
 
 logger = logging.getLogger(__name__)
 

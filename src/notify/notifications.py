@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from .config import Settings
+from ..config import Settings
 from .mailer import send_html_email
 
 logger = logging.getLogger(__name__)
