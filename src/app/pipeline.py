@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..analysis.accuracy import update_and_summarize_accuracy
 from ..analysis.rules import annotate_trading_discipline
 from ..config import Settings, load_settings
 from ..dashboard import render_dashboard_html
@@ -179,7 +180,12 @@ def run_analysis_pipeline(
             logger.error("LLM 调用失败，启用降级规则: %s", exc)
             llm_result = fallback_analysis(stock_metrics)
 
-    html = render_dashboard_html(stock_metrics, llm_result)
+    accuracy_summary = update_and_summarize_accuracy(
+        stock_metrics,
+        llm_result,
+        window_days=settings.accuracy_windows,
+    )
+    html = render_dashboard_html(stock_metrics, llm_result, accuracy_summary=accuracy_summary)
     subject_date = f"{datetime.now():%Y-%m-%d}"
     subject = (
         f"自选股决策仪表盘 - {subject_date}"

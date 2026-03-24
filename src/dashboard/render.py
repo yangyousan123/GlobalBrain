@@ -60,21 +60,77 @@ def _news_digest_section(stock_metrics: list[dict[str, Any]]) -> str:
         body = html.escape(str(digest)[:4000])
         blocks.append(
             f'<div style="margin-bottom:10px;"><strong>{html.escape(str(title))}</strong>'
-            f'<pre style="white-space:pre-wrap;font-size:11px;margin:6px 0 0 0;">{body}</pre></div>'
+            f'<pre style="white-space:pre-wrap;font-size:13px;margin:6px 0 0 0;">{body}</pre></div>'
         )
     if not blocks:
         return ""
     inner = "".join(blocks)
     return (
-        f'<div class="card"><h2 style="font-size:14px;margin:0 0 8px 0;">'
-        f'Tavily 新闻摘要</h2><p style="font-size:11px;color:#6b7280;margin:0 0 8px 0;">'
+        f'<div class="card"><h2 style="font-size:17px;margin:0 0 8px 0;">'
+        f'Tavily 新闻摘要</h2><p style="font-size:13px;color:#6b7280;margin:0 0 8px 0;">'
         f'以下为联网检索摘要，仅供参考，请交叉验证来源与时效。</p>{inner}</div>'
+    )
+
+
+def _fmt_pct(v: Any) -> str:
+    if v is None:
+        return "-"
+    try:
+        return f"{float(v):.2f}%"
+    except Exception:
+        return "-"
+
+
+def _accuracy_section(summary: dict[str, Any] | None) -> str:
+    if not summary:
+        return ""
+    w_map = summary.get("window_metrics")
+    if isinstance(w_map, dict) and w_map:
+        rows: list[str] = []
+        days = summary.get("window_days") if isinstance(summary.get("window_days"), list) else []
+        keys = [f"T+{int(d)}" for d in days if isinstance(d, int) or (isinstance(d, str) and str(d).isdigit())]
+        if not keys:
+            keys = ["T+1", "T+3", "T+5"]
+        for key in keys:
+            item = w_map.get(key)
+            if not isinstance(item, dict):
+                continue
+            rows.append(
+                f'{key}：方向 {item.get("direction_hit", 0)}/{item.get("direction_total", 0)}'
+                f'（{_fmt_pct(item.get("direction_win_rate_pct"))}），'
+                f'止盈 {item.get("take_profit_hit", 0)}/{item.get("take_profit_total", 0)}'
+                f'（{_fmt_pct(item.get("take_profit_hit_rate_pct"))}），'
+                f'止损 {item.get("stop_loss_hit", 0)}/{item.get("stop_loss_total", 0)}'
+                f'（{_fmt_pct(item.get("stop_loss_hit_rate_pct"))}），'
+                f'样本 {item.get("evaluated_records", 0)}'
+            )
+        detail = "<br/>".join(rows) if rows else "暂无窗口化评估样本"
+        return (
+            '<div class="card"><h2 style="font-size:17px;margin:0 0 8px 0;">历史分析准确率（固定窗口）</h2>'
+            f'<div style="font-size:14px;line-height:1.8;">{detail}<br/>'
+            f'总样本：{summary.get("total_records", 0)}，更新时间：{summary.get("updated_at", "-")}'
+            f"</div></div>"
+        )
+    return (
+        '<div class="card"><h2 style="font-size:17px;margin:0 0 8px 0;">历史分析准确率</h2>'
+        f'<div style="font-size:14px;line-height:1.8;">'
+        f'方向胜率：{summary.get("direction_hit", 0)}/{summary.get("direction_total", 0)}'
+        f'（{_fmt_pct(summary.get("direction_win_rate_pct"))}）<br/>'
+        f'止盈命中率：{summary.get("take_profit_hit", 0)}/{summary.get("take_profit_total", 0)}'
+        f'（{_fmt_pct(summary.get("take_profit_hit_rate_pct"))}）<br/>'
+        f'止损命中率：{summary.get("stop_loss_hit", 0)}/{summary.get("stop_loss_total", 0)}'
+        f'（{_fmt_pct(summary.get("stop_loss_hit_rate_pct"))}）<br/>'
+        f'样本：已评估 {summary.get("evaluated_records", 0)}，待评估 {summary.get("pending_records", 0)}，'
+        f'总计 {summary.get("total_records", 0)}'
+        f'</div></div>'
     )
 
 
 def render_dashboard_html(
     stock_metrics: list[dict[str, Any]],
     llm_result: dict[str, Any],
+    *,
+    accuracy_summary: dict[str, Any] | None = None,
 ) -> str:
     stock_map = {
         _metric_key(str(item["code"]), item.get("market")): item for item in stock_metrics
@@ -123,6 +179,7 @@ def render_dashboard_html(
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     table_html = "\n".join(rows_html) if rows_html else "<tr><td colspan='18'>无数据</td></tr>"
+    accuracy_html = _accuracy_section(accuracy_summary)
     news_html = _news_digest_section(stock_metrics)
 
     return f"""
@@ -130,11 +187,11 @@ def render_dashboard_html(
 <head>
   <meta charset="utf-8"/>
   <style>
-    body {{ font-family: Arial, sans-serif; color: #1f2937; }}
+    body {{ font-family: Arial, sans-serif; color: #1f2937; font-size: 19px; }}
     .container {{ max-width: 1400px; margin: 0 auto; }}
     h1 {{ color: #111827; }}
     .card {{ background: #f9fafb; padding: 14px; border-radius: 8px; margin-bottom: 12px; }}
-    table {{ border-collapse: collapse; width: 100%; font-size: 12px; }}
+    table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
     th, td {{ border: 1px solid #e5e7eb; padding: 6px; text-align: left; }}
     th {{ background: #f3f4f6; }}
   </style>
@@ -147,6 +204,7 @@ def render_dashboard_html(
       <br/>
       <strong>生成时间：</strong> {generated_at}
     </div>
+    {accuracy_html}
     <table>
       <thead>
         <tr>

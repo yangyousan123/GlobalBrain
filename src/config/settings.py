@@ -55,6 +55,7 @@ class Settings:
     tavily_request_delay_seconds: float
     news_digest_max_chars: int
     tavily_translate_answer_to_zh: bool
+    accuracy_windows: tuple[int, ...]
 
 
 def _required(key: str) -> str:
@@ -89,6 +90,24 @@ def _resolve_llm_models() -> tuple[str, ...]:
         if m and m not in out:
             out.append(m)
     return tuple(out)
+
+
+def _parse_accuracy_windows() -> tuple[int, ...]:
+    raw = os.getenv("ACCURACY_WINDOWS", "1,3,5").strip()
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    vals: list[int] = []
+    for p in parts:
+        try:
+            v = int(p)
+        except ValueError:
+            continue
+        if v <= 0:
+            continue
+        if v not in vals:
+            vals.append(v)
+    if not vals:
+        return (1, 3, 5)
+    return tuple(sorted(vals))
 
 
 def _validate_notify(s: Settings) -> None:
@@ -185,6 +204,7 @@ def load_settings() -> Settings:
         tavily_request_delay_seconds=float(os.getenv("TAVILY_REQUEST_DELAY_SECONDS", "1.0")),
         news_digest_max_chars=int(os.getenv("NEWS_DIGEST_MAX_CHARS", "2000")),
         tavily_translate_answer_to_zh=_env_bool("TAVILY_TRANSLATE_ANSWER_TO_ZH", True),
+        accuracy_windows=_parse_accuracy_windows(),
     )
     _validate_notify(s)
     return s
