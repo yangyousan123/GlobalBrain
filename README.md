@@ -129,6 +129,10 @@ python -m src --schedule
 
 ![](images/email03.png)
 
+![](images/email04.png)
+
+![](images/email05.png)
+
 ## 关键配置说明（.env）
 
 ### LLM（LiteLLM 统一调用）

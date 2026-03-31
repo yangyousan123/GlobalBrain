@@ -131,6 +131,10 @@ Common arguments:
 
 ![](images/email03.png)
 
+![](images/email04.png)
+
+![](images/email05.png)
+
 ## Key Configuration Details (.env)
 
 ### LLM (Unified LiteLLM Calls)
