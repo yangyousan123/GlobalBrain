@@ -7,17 +7,16 @@ from pathlib import Path
 from typing import Any
 
 from ..analysis.accuracy import update_and_summarize_accuracy
-from ..analysis.rules import annotate_trading_discipline
 from ..config import Settings, load_settings
 from ..dashboard import render_dashboard_html
 from ..data.market_calendar import is_cn_trading_day
+from ..data.markets import MARKET_CN_SH
 from ..data.stock_data import (
     fetch_stock_metrics,
     fetch_stock_metrics_without_yfinance,
     fetch_stock_metrics_yfinance_batch,
 )
 from ..data.watchlist import load_watchlist, watchlist_has_cn_sh
-from ..llm import OpenAICompatClient, fallback_analysis
 from ..news.tavily_news import fetch_stock_news_digest
 from ..news.translate_zh import translate_tavily_payload_to_zh
 from ..notify import dispatch_report
@@ -98,7 +97,8 @@ def run_analysis_pipeline(
     force_run: bool = False,
 ) -> dict[str, Any]:
     """
-    主链路：交易日检查 → 拉取行情 → 规则标注 →（可选）Tavily 新闻 → LLM → 多渠道推送。
+    主链路：交易日检查 → 拉取行情 → 规则标注 →（可选）多源新闻 → HTML 仪表盘 → 多渠道推送。
+    不包含大模型生成的个股策略建议。
     """
     watchlist = load_watchlist(resolve_watchlist_path(watchlist_path))
     if settings.trading_day_check_enabled and not force_run and watchlist_has_cn_sh(watchlist):
@@ -119,10 +119,6 @@ def run_analysis_pipeline(
         name = item.get("name")
         try:
             metrics = fetch_stock_metrics(code, market=market, use_yfinance_fallback=False)
-            metrics = annotate_trading_discipline(
-                metrics,
-                bias_threshold_pct=settings.bias_threshold_pct,
-            )
             if name:
                 metrics["name"] = name
             stock_metrics.append(metrics)
@@ -133,6 +129,23 @@ def run_analysis_pipeline(
         if delay > 0:
             time.sleep(delay)
 
+    # 先走 Stooq / 港股 AkShare，避免一上来就批量打 Yahoo 触发限流
+    if failed_items:
+        existing = {(m.get("code"), m.get("market")) for m in stock_metrics}
+        for code, market in list(failed_items):
+            if (code, market) in existing:
+                continue
+            time.sleep(max(2.0, delay * 2) if delay > 0 else 2.0)
+            m = fetch_stock_metrics_without_yfinance(code, market=market, lookback_days=180)
+            if not m:
+                continue
+            n = name_map.get((code, market))
+            if n:
+                m["name"] = n
+            stock_metrics.append(m)
+            existing.add((code, market))
+            logger.info("首轮失败后 Stooq/非 Yahoo 补全成功: %s %s", market, code)
+
     if failed_items:
         try:
             existing = {(m.get("code"), m.get("market")) for m in stock_metrics}
@@ -142,10 +155,6 @@ def run_analysis_pipeline(
                 for m in batch_metrics:
                     key = (m.get("code"), m.get("market"))
                     if key not in existing:
-                        m = annotate_trading_discipline(
-                            m,
-                            bias_threshold_pct=settings.bias_threshold_pct,
-                        )
                         n = name_map.get(key)
                         if n:
                             m["name"] = n
@@ -157,15 +166,38 @@ def run_analysis_pipeline(
 
     existing_after = {(m.get("code"), m.get("market")) for m in stock_metrics}
     still_failed = [(c, m) for c, m in failed_items if (c, m) not in existing_after]
+
+    # 批量 yfinance 易触发限流；逐股延迟再试一次（含沪 A 的 yfinance 兜底）
+    if still_failed:
+        for code, market in list(still_failed):
+            wait_s = max(45.0, delay * 8) if delay > 0 else 45.0
+            time.sleep(wait_s)
+            try:
+                m = fetch_stock_metrics(
+                    code,
+                    market=market,
+                    lookback_days=180,
+                    use_yfinance_fallback=True,
+                    skip_akshare=(market == MARKET_CN_SH),
+                )
+                key = (m.get("code"), m.get("market"))
+                if key in {(x.get("code"), x.get("market")) for x in stock_metrics}:
+                    continue
+                n = name_map.get((code, market))
+                if n:
+                    m["name"] = n
+                stock_metrics.append(m)
+                logger.info("单股 yfinance 延迟补全成功: %s %s", market, code)
+            except Exception as exc:
+                logger.warning("单股 yfinance 补全仍失败 %s %s: %s", market, code, exc)
+
+    existing_after = {(m.get("code"), m.get("market")) for m in stock_metrics}
+    still_failed = [(c, m) for c, m in failed_items if (c, m) not in existing_after]
     if still_failed:
         for code, market in still_failed:
             m = fetch_stock_metrics_without_yfinance(code, market=market, lookback_days=180)
             if not m:
                 continue
-            m = annotate_trading_discipline(
-                m,
-                bias_threshold_pct=settings.bias_threshold_pct,
-            )
             n = name_map.get((code, market))
             if n:
                 m["name"] = n
@@ -174,24 +206,13 @@ def run_analysis_pipeline(
 
     _enrich_news_from_tavily(settings, stock_metrics)
 
+    llm_result: dict[str, Any] = {
+        "market_view": "本报告为自选股行情与新闻汇总，不包含 AI 策略建议。",
+        "stocks": [],
+    }
     if not stock_metrics:
         failed_label = [f"{m}:{c}" for c, m in failed_items[:5]]
-        logger.error("未获取到任何股票数据，降级输出仪表盘。失败: %s", failed_label)
-        llm_result = fallback_analysis([])
-    else:
-        llm_client = OpenAICompatClient(
-            api_key=settings.llm_api_key,
-            api_keys=list(settings.llm_api_keys),
-            provider_api_keys={k: list(v) for k, v in settings.llm_provider_api_keys.items()},
-            base_url=settings.llm_base_url,
-            models=list(settings.llm_models),
-        )
-        try:
-            llm_result = llm_client.analyze(stock_metrics)
-            logger.info("LLM 分析完成（模型链: %s）", " -> ".join(settings.llm_models))
-        except Exception as exc:
-            logger.error("LLM 调用失败，启用降级规则: %s", exc)
-            llm_result = fallback_analysis(stock_metrics)
+        logger.error("未获取到任何股票数据，仅输出空仪表盘。失败: %s", failed_label)
 
     accuracy_summary = update_and_summarize_accuracy(
         stock_metrics,
@@ -201,9 +222,9 @@ def run_analysis_pipeline(
     html = render_dashboard_html(stock_metrics, llm_result, accuracy_summary=accuracy_summary)
     subject_date = f"{datetime.now():%Y-%m-%d}"
     subject = (
-        f"自选股决策仪表盘 - {subject_date}"
+        f"自选股行情与新闻简报 - {subject_date}"
         if stock_metrics
-        else f"自选股决策仪表盘（无可用行情） - {subject_date}"
+        else f"自选股行情简报（无可用行情） - {subject_date}"
     )
     if not stock_metrics and failed_items:
         subject = f"{subject}，失败: {', '.join(f'{m}:{c}' for c, m in failed_items[:3])}"

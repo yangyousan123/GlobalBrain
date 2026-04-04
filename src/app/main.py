@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="自选股智能分析（沪A / 港股 / 美股）",
+        description="自选股行情与新闻简报（沪A / 港股 / 美股，不含 AI 策略建议）",
     )
     parser.add_argument("--once", action="store_true", help="立即执行一次分析并推送")
     parser.add_argument("--schedule", action="store_true", help="进入每日定时模式")

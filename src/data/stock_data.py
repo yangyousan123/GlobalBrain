@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,37 @@ from .markets import (
 )
 
 CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "cache"
+
+_STOOQ_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/csv,*/*;q=0.8",
+}
+
+
+def _stooq_fetch_csv_text(url: str) -> str | None:
+    """Stooq 对无浏览器特征的请求常返回空体；带 UA 并做有限次重试。"""
+    for attempt in range(4):
+        try:
+            r = requests.get(url, timeout=45, headers=_STOOQ_HEADERS)
+        except Exception:
+            if attempt < 3:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            return None
+        if r.status_code != 200:
+            if attempt < 3:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            return None
+        text = (r.text or "").strip()
+        if text and not text.lower().startswith("no data"):
+            return text
+        if attempt < 3:
+            time.sleep(3.0 * (attempt + 1))
+    return None
 
 
 def validate_sh_a_stock(code: str) -> bool:
@@ -72,10 +104,6 @@ def _finalize_ohlc_metrics(
     close: float,
     change_pct: float,
     prev_close: float,
-    ma5: float | None,
-    ma10: float | None,
-    ma20: float | None,
-    rsi14: float | None,
     vol_ratio5: float | None,
 ) -> dict[str, Any]:
     def r2(x: float | None) -> float | None:
@@ -83,44 +111,15 @@ def _finalize_ohlc_metrics(
             return None
         return round(float(x), 2)
 
-    ma5v, ma10v, ma20v = r2(ma5), r2(ma10), r2(ma20)
-    bias_ma20_pct = None
-    if ma20v is not None and ma20v != 0:
-        bias_ma20_pct = round((close - ma20v) / ma20v * 100, 2)
-    ma_trend = None
-    if ma5v is not None and ma10v is not None and ma20v is not None:
-        if ma5v > ma10v > ma20v:
-            ma_trend = "bull"
-        elif ma5v < ma10v < ma20v:
-            ma_trend = "bear"
-        else:
-            ma_trend = "mixed"
     return {
         "code": code,
         "market": market,
         "date": date_str,
         "close": round(close, 2),
         "change_pct": round(change_pct, 2),
-        "ma5": ma5v,
-        "ma10": ma10v,
-        "ma20": ma20v,
-        "rsi14": r2(rsi14),
         "vol_ratio5": r2(vol_ratio5),
         "prev_close": round(prev_close, 2),
-        "bias_ma20_pct": bias_ma20_pct,
-        "ma_trend": ma_trend,
     }
-
-
-def _calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = (-delta).where(delta < 0, 0.0)
-    avg_gain = gain.rolling(window=period, min_periods=period).mean()
-    avg_loss = loss.rolling(window=period, min_periods=period).mean()
-    rs = avg_gain / avg_loss.replace(0, pd.NA)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50)
 
 
 def _is_yfinance_rate_limit(exc: BaseException) -> bool:
@@ -151,10 +150,6 @@ def _ohlc_from_close_volume_df(
     if df.empty:
         return None
 
-    df["ma5"] = df[close_col].rolling(5).mean()
-    df["ma10"] = df[close_col].rolling(10).mean()
-    df["ma20"] = df[close_col].rolling(20).mean()
-    df["rsi14"] = _calc_rsi(df[close_col], 14)
     df["vol_ratio5"] = df[vol_col] / df[vol_col].rolling(5).mean()
 
     last = df.iloc[-1]
@@ -170,10 +165,6 @@ def _ohlc_from_close_volume_df(
         close=float(last[close_col]),
         change_pct=change_pct,
         prev_close=prev_close,
-        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
-        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
-        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
-        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
         vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
     )
 
@@ -206,13 +197,13 @@ def _fetch_stock_metrics_yfinance(
             )
         except Exception as exc:
             if _is_yfinance_rate_limit(exc) and attempt < 2:
-                time.sleep(10 * (attempt + 1))
+                time.sleep(25 * (attempt + 1))
                 continue
             return None
 
         if df is None or df.empty:
             if attempt < 2:
-                time.sleep(5 * (attempt + 1))
+                time.sleep(12 * (attempt + 1))
                 continue
             return None
         break
@@ -232,7 +223,8 @@ def _fetch_stock_metrics_stooq(
     lookback_days: int,
 ) -> dict[str, Any] | None:
     if market == MARKET_CN_SH:
-        symbol = f"{code}.cn"
+        # Stooq 上交所日线为 TICKER.ss（.cn 无法命中沪 A）
+        symbol = f"{code}.ss"
     elif market == MARKET_HK:
         n = int(normalize_hk_code(code))
         symbol = f"{n:04d}.hk"
@@ -244,16 +236,8 @@ def _fetch_stock_metrics_stooq(
     url = f"https://stooq.com/q/d/l/?s={symbol}&i=d"
     start_dt = datetime.now() - timedelta(days=lookback_days)
 
-    try:
-        r = requests.get(url, timeout=30)
-    except Exception:
-        return None
-
-    if r.status_code != 200:
-        return None
-
-    text = (r.text or "").strip()
-    if not text or text.lower().startswith("no data"):
+    text = _stooq_fetch_csv_text(url)
+    if not text:
         return None
 
     try:
@@ -271,8 +255,10 @@ def _fetch_stock_metrics_stooq(
     if csv_df.empty:
         return None
 
-    if "Close" not in csv_df.columns or "Volume" not in csv_df.columns:
+    if "Close" not in csv_df.columns:
         return None
+    if "Volume" not in csv_df.columns:
+        csv_df["Volume"] = 0.0
 
     csv_df["close"] = pd.to_numeric(csv_df["Close"], errors="coerce")
     csv_df["volume"] = pd.to_numeric(csv_df["Volume"], errors="coerce")
@@ -280,15 +266,22 @@ def _fetch_stock_metrics_stooq(
     if csv_df.empty:
         return None
 
-    csv_df["ma5"] = csv_df["close"].rolling(5).mean()
-    csv_df["ma10"] = csv_df["close"].rolling(10).mean()
-    csv_df["ma20"] = csv_df["close"].rolling(20).mean()
-    csv_df["rsi14"] = _calc_rsi(csv_df["close"], 14)
-    csv_df["vol_ratio5"] = csv_df["volume"] / csv_df["volume"].rolling(5).mean()
+    vol_mean5 = csv_df["volume"].rolling(5).mean()
+    csv_df["vol_ratio5"] = csv_df["volume"] / vol_mean5.replace(0, pd.NA)
 
     last = csv_df.iloc[-1]
     prev_close = float(csv_df["close"].iloc[-2]) if len(csv_df) > 1 else float(last["close"])
     change_pct = (float(last["close"]) - prev_close) / prev_close * 100 if prev_close else 0.0
+
+    vr_raw = last["vol_ratio5"]
+    if pd.isna(vr_raw):
+        vol_ratio5 = None
+    else:
+        try:
+            vr_f = float(vr_raw)
+            vol_ratio5 = vr_f if math.isfinite(vr_f) else None
+        except (TypeError, ValueError):
+            vol_ratio5 = None
 
     return _finalize_ohlc_metrics(
         code=code,
@@ -297,12 +290,39 @@ def _fetch_stock_metrics_stooq(
         close=float(last["close"]),
         change_pct=change_pct,
         prev_close=prev_close,
-        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
-        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
-        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
-        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
-        vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
+        vol_ratio5=vol_ratio5,
     )
+
+
+def _cn_sh_stooq_yfinance_fallback(
+    code: str,
+    lookback_days: int,
+    *,
+    use_yfinance_fallback: bool,
+    use_cache: bool,
+    cache_ttl_days: int,
+) -> dict[str, Any] | None:
+    """沪 A：仅 Stooq →（可选）yfinance → 读缓存；不含 AkShare。"""
+    if use_cache:
+        cached = _load_cached_stock_metrics(MARKET_CN_SH, code, max_age_days=cache_ttl_days)
+        if cached:
+            return cached
+    m = _fetch_stock_metrics_stooq(code, MARKET_CN_SH, lookback_days)
+    if m:
+        if use_cache:
+            _save_cached_stock_metrics(MARKET_CN_SH, code, m)
+        return m
+    if use_yfinance_fallback:
+        m = _fetch_stock_metrics_yfinance(code, MARKET_CN_SH, lookback_days)
+        if m:
+            if use_cache:
+                _save_cached_stock_metrics(MARKET_CN_SH, code, m)
+            return m
+    if use_cache:
+        cached = _load_cached_stock_metrics(MARKET_CN_SH, code, max_age_days=cache_ttl_days)
+        if cached:
+            return cached
+    return None
 
 
 def _fetch_hk_akshare(code: str, lookback_days: int) -> dict[str, Any] | None:
@@ -335,10 +355,6 @@ def _fetch_hk_akshare(code: str, lookback_days: int) -> dict[str, Any] | None:
     if "涨跌幅" not in df.columns:
         df["涨跌幅"] = df["收盘"].pct_change() * 100
 
-    df["ma5"] = df["收盘"].rolling(5).mean()
-    df["ma10"] = df["收盘"].rolling(10).mean()
-    df["ma20"] = df["收盘"].rolling(20).mean()
-    df["rsi14"] = _calc_rsi(df["收盘"], 14)
     df["vol_ratio5"] = df["成交量"] / df["成交量"].rolling(5).mean()
 
     last = df.iloc[-1]
@@ -351,10 +367,6 @@ def _fetch_hk_akshare(code: str, lookback_days: int) -> dict[str, Any] | None:
         close=float(last["收盘"]),
         change_pct=float(last["涨跌幅"]) if pd.notna(last["涨跌幅"]) else 0.0,
         prev_close=float(prev["收盘"]),
-        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
-        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
-        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
-        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
         vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
     )
 
@@ -392,7 +404,7 @@ def _fetch_stock_metrics_yfinance_batch(
             break
         except Exception as exc:
             if _is_yfinance_rate_limit(exc):
-                time.sleep(10 * (attempt + 1))
+                time.sleep(25 * (attempt + 1))
                 continue
             return {}
 
@@ -452,13 +464,17 @@ def fetch_stock_metrics_without_yfinance(
     cache_ttl_days: int = 7,
 ) -> dict[str, Any] | None:
     """
-    不使用 Yahoo Finance：港股 AkShare → Stooq，美股 Stooq。
+    不使用 Yahoo Finance：沪 A / 美股仅 Stooq；港股 AkShare → Stooq。
     用于首轮与批量 yfinance 均失败后的补全，避免反复触发限流。
     """
-    if market not in (MARKET_HK, MARKET_US):
+    if market not in (MARKET_CN_SH, MARKET_HK, MARKET_US):
         return None
 
-    if market == MARKET_HK:
+    if market == MARKET_CN_SH:
+        if not validate_cn_sh(code):
+            return None
+        code = str(code).strip()
+    elif market == MARKET_HK:
         code = normalize_hk_code(code)
     elif market == MARKET_US:
         code = str(code).strip().upper().replace(" ", "")
@@ -468,7 +484,9 @@ def fetch_stock_metrics_without_yfinance(
         if cached:
             return cached
 
-    if market == MARKET_HK:
+    if market == MARKET_CN_SH:
+        m = _fetch_stock_metrics_stooq(code, market, lookback_days)
+    elif market == MARKET_HK:
         m = _fetch_hk_akshare(code, lookback_days)
         if not m:
             m = _fetch_stock_metrics_stooq(code, market, lookback_days)
@@ -487,6 +505,7 @@ def fetch_stock_metrics(
     use_cache: bool = True,
     cache_ttl_days: int = 7,
     use_yfinance_fallback: bool = True,
+    skip_akshare: bool = False,
 ) -> dict[str, Any]:
     if market not in (MARKET_CN_SH, MARKET_HK, MARKET_US):
         raise ValueError(f"不支持的市场: {market}")
@@ -530,6 +549,18 @@ def fetch_stock_metrics(
         raise ValueError(f"美股 {code} 无可用数据")
 
     # MARKET_CN_SH
+    if skip_akshare:
+        m = _cn_sh_stooq_yfinance_fallback(
+            code,
+            lookback_days,
+            use_yfinance_fallback=use_yfinance_fallback,
+            use_cache=use_cache,
+            cache_ttl_days=cache_ttl_days,
+        )
+        if m:
+            return m
+        raise ValueError(f"股票 {code} 无可用数据（已跳过 AkShare，Stooq/yfinance 均未成功）")
+
     end_date = datetime.now().strftime("%Y%m%d")
     symbol = f"sh{code}"
 
@@ -564,23 +595,15 @@ def fetch_stock_metrics(
 
     if df is None or df.empty:
         detail = f"，最后一次异常: {last_err}" if last_err else ""
-        stooq_metrics = _fetch_stock_metrics_stooq(code, MARKET_CN_SH, lookback_days)
-        if stooq_metrics:
-            if use_cache:
-                _save_cached_stock_metrics(MARKET_CN_SH, code, stooq_metrics)
-            return stooq_metrics
-
-        if use_yfinance_fallback:
-            yfinance_metrics = _fetch_stock_metrics_yfinance(code, MARKET_CN_SH, lookback_days)
-            if yfinance_metrics:
-                if use_cache:
-                    _save_cached_stock_metrics(MARKET_CN_SH, code, yfinance_metrics)
-                return yfinance_metrics
-
-        if use_cache:
-            cached = _load_cached_stock_metrics(MARKET_CN_SH, code, max_age_days=cache_ttl_days)
-            if cached:
-                return cached
+        m = _cn_sh_stooq_yfinance_fallback(
+            code,
+            lookback_days,
+            use_yfinance_fallback=use_yfinance_fallback,
+            use_cache=use_cache,
+            cache_ttl_days=cache_ttl_days,
+        )
+        if m:
+            return m
         raise ValueError(f"股票 {code} 无可用数据{detail}")
 
     df = df.sort_values("日期").copy()
@@ -588,10 +611,6 @@ def fetch_stock_metrics(
     df["成交量"] = pd.to_numeric(df["成交量"], errors="coerce")
     df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
 
-    df["ma5"] = df["收盘"].rolling(5).mean()
-    df["ma10"] = df["收盘"].rolling(10).mean()
-    df["ma20"] = df["收盘"].rolling(20).mean()
-    df["rsi14"] = _calc_rsi(df["收盘"], 14)
     df["vol_ratio5"] = df["成交量"] / df["成交量"].rolling(5).mean()
 
     last = df.iloc[-1]
@@ -604,10 +623,6 @@ def fetch_stock_metrics(
         close=float(last["收盘"]),
         change_pct=float(last["涨跌幅"]),
         prev_close=float(prev["收盘"]),
-        ma5=float(last["ma5"]) if pd.notna(last["ma5"]) else None,
-        ma10=float(last["ma10"]) if pd.notna(last["ma10"]) else None,
-        ma20=float(last["ma20"]) if pd.notna(last["ma20"]) else None,
-        rsi14=float(last["rsi14"]) if pd.notna(last["rsi14"]) else None,
         vol_ratio5=float(last["vol_ratio5"]) if pd.notna(last["vol_ratio5"]) else None,
     )
 

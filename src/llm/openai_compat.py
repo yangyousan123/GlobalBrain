@@ -8,6 +8,31 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _normalize_litellm_model(model: str, base_url: str) -> str:
+    """LiteLLM 需要 provider/model；裸写 deepseek-chat 会报 Provider NOT provided。"""
+    m = (model or "").strip()
+    if "/" in m:
+        return m
+    bu = (base_url or "").lower()
+    ml = m.lower()
+    if "deepseek.com" in bu or ml in ("deepseek-chat", "deepseek-reasoner", "deepseek-coder"):
+        return f"deepseek/{m}"
+    return m
+
+
+def _litellm_api_base(model: str, base_url: str) -> str | None:
+    """OpenAI 兼容族与 DeepSeek 官方端点需显式 api_base。"""
+    if not (base_url or "").strip():
+        return None
+    bu = base_url.rstrip("/")
+    lm = _normalize_litellm_model(model, base_url).lower()
+    if _needs_api_base(model):
+        return bu
+    if lm.startswith("deepseek/"):
+        return bu
+    return None
+
+
 def _needs_api_base(model: str) -> bool:
     """
     仅 OpenAI 兼容族模型使用 api_base。
@@ -64,21 +89,23 @@ def post_chat_completions(
         from litellm import completion
 
         for model in models:
+            litellm_model = _normalize_litellm_model(model, base_url)
             selected_keys = _select_key_pool(
-                model=model,
+                model=litellm_model,
                 default_keys=key_pool,
                 provider_api_keys=provider_api_keys,
             )
             for idx, key in enumerate(selected_keys):
                 try:
                     kwargs: dict[str, Any] = {
-                        "model": model,
+                        "model": litellm_model,
                         "api_key": key,
                         "messages": payload.get("messages", []),
                         "timeout": timeout,
                     }
-                    if base_url and _needs_api_base(model):
-                        kwargs["api_base"] = base_url.rstrip("/")
+                    api_base = _litellm_api_base(model, base_url)
+                    if api_base:
+                        kwargs["api_base"] = api_base
                     if "temperature" in payload:
                         kwargs["temperature"] = payload["temperature"]
                     if "response_format" in payload:

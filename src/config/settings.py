@@ -46,7 +46,6 @@ class Settings:
     timezone: str
     run_time: str
     trading_day_check_enabled: bool
-    bias_threshold_pct: float
     analysis_delay_seconds: float
     tavily_api_key: str | None
     tavily_enabled: bool
@@ -267,7 +266,6 @@ def load_settings() -> Settings:
         timezone=os.getenv("TIMEZONE", "Asia/Shanghai").strip(),
         run_time=os.getenv("RUN_TIME", "18:30").strip(),
         trading_day_check_enabled=_env_bool("TRADING_DAY_CHECK_ENABLED", True),
-        bias_threshold_pct=float(os.getenv("BIAS_THRESHOLD", "5.0")),
         analysis_delay_seconds=float(os.getenv("ANALYSIS_DELAY_SECONDS", "0")),
         tavily_api_key=tavily_key,
         tavily_enabled=tavily_on,
